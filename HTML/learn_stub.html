@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Модуль — Мир алгоритмов: программируем на Python{% endblock %}
+{% block body_class %}page-learn{% endblock %}
+
+{% block content %}
+<div class="shell shell--learn">
+    <div class="learn-overlay-backdrop" id="learnNavBackdrop" aria-hidden="true"></div>
+    <aside class="sidebar sidebar-left" id="learnSidebarLeft">
+        <button type="button" class="learn-sidebar-close" id="learnCloseLeft" aria-label="Закрыть меню">×</button>
+        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: программируем на Python">Мир алгоритмов</a>
+        <nav class="side-nav" aria-label="Разделы">
+            <a class="side-nav__link side-nav__link--active" href="{{ url_for('home') }}">Модули</a>
+            <a class="side-nav__link" href="{{ url_for('learn') }}">Задания</a>
+            <span class="side-nav__link side-nav__link--muted">Профиль</span>
+        </nav>
+
+        <div class="card card--soft progress-card">
+            <div class="progress-card__label">{{ current_module.icon }} Модуль {{ current_module_num }}</div>
+            <div class="progress-card__percent">{{ modules_stats[current_module_num - 1].progress if modules_stats|length >= current_module_num else 0 }}%</div>
+            <div class="duo-progress sidebar-main-progress" role="progressbar"
+                aria-valuenow="{{ modules_stats[current_module_num - 1].progress if modules_stats|length >= current_module_num else 0 }}" aria-valuemin="0"
+                aria-valuemax="100">
+                <div class="duo-progress__fill" style="width: {{ modules_stats[current_module_num - 1].progress if modules_stats|length >= current_module_num else 0 }}%">
+                </div>
+            </div>
+            <div class="progress-card__stats">
+                <span><span data-completed-count>{{ completed_tasks }} / {{ total_tasks }}</span> заданий</span>
+                <span><span data-total-xp>{{ user.total_xp }}</span> XP</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-area">
+        <div class="learn-mobile-toolbar" role="toolbar" aria-label="Навигация по курсу">
+            <button type="button" class="btn btn-ghost learn-toolbar-btn" id="learnOpenLeft" aria-controls="learnSidebarLeft" aria-expanded="false" aria-haspopup="true">
+                <span class="learn-toolbar-icon" aria-hidden="true">☰</span>
+                <span class="learn-toolbar-text">Меню</span>
+            </button>
+            <button type="button" class="btn btn-ghost learn-toolbar-btn" id="learnOpenRight" aria-controls="learnSidebarRight" aria-expanded="false" aria-haspopup="true">
+                <span class="learn-toolbar-icon" aria-hidden="true">◧</span>
+                <span class="learn-toolbar-text">Панель</span>
+            </button>
+        </div>
+        <article class="card task-shell task-shell--stub">
+            <header class="task-head">
+                <div class="task-head__icon">{{ current_module.icon }}</div>
+                <div>
+                    <h1 class="task-head__title">{{ current_module.title }}</h1>
+                    <p class="task-head__desc">{{ current_module.description }}</p>
+                    <p class="task-pill">Содержание появится позже</p>
+                </div>
+            </header>
+
+            <section class="stub-panel">
+                <p class="stub-panel__lead">Этот модуль пока в разработке. Вы уже можете вернуться к <strong>Модулю 1</strong> или на главную.</p>
+                <div class="stub-panel__actions">
+                    <a href="{{ url_for('load_module', module_id=1) }}" class="btn btn-primary">К модулю 1</a>
+                    <a href="{{ url_for('home') }}" class="btn btn-secondary">На главную</a>
+                </div>
+            </section>
+        </article>
+    </main>
+
+    <aside class="sidebar sidebar-right" id="learnSidebarRight">
+        <button type="button" class="learn-sidebar-close learn-sidebar-close--right" id="learnCloseRight" aria-label="Закрыть панель">×</button>
+        <div class="card card--soft">
+            <div class="level-ring-wrap">
+                <div class="level-ring" data-level-ring style="--level-pct: {{ level_info.level_pct }}%;">
+                    <div class="level-ring__inner">
+                        <span class="level-ring__lv" data-level-value>{{ level_info.level }}</span>
+                        <span class="level-ring__sub">уровень</span>
+                    </div>
+                </div>
+                <p class="level-xp-line" data-xp-sub>{{ level_info.xp_in_level }} / {{ level_info.xp_to_next }} XP до след. уровня</p>
+            </div>
+        </div>
+
+        <div class="card card--soft">
+            <h3 class="card__title">Модули</h3>
+            <div class="module-list">
+                {% for module in modules_stats %}
+                <div class="module-row {% if module.is_locked %}module-row--locked{% endif %}"
+                    data-module-id="{{ module.id }}" {% if not module.is_locked %}onclick="window.location.href='/load_module/{{ module.id }}'"
+                    role="button" tabindex="0" {% endif %}>
+                    <div class="module-row__title">{{ module.icon }} {{ module.title }}</div>
+                    <div class="module-progress module-progress--inline">
+                        <div class="duo-progress small">
+                            <div class="duo-progress__fill" style="width: {{ module.progress }}%"></div>
+                        </div>
+                        <span>{{ module.progress }}%</span>
+                    </div>
+                    {% if module.is_locked %}
+                    <div class="module-row__lock">Завершите предыдущий модуль</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="footer-mini">
+            <a href="{{ url_for('home') }}">Главная</a>
+        </div>
+    </aside>
+</div>
+{% endblock %}

@@ -1,46 +1,30 @@
-import io
 import os
 import secrets
-import sys
-import traceback
+import threading
+import time
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 
+from code_runner import run_python
+from code_runner.interactive_session import InteractiveSession
 from course_data import (
     ACHIEVEMENTS,
     LESSONS,
     TASK_BY_ID,
     TOTAL_TASKS_COUNT,
     XP_PER_LEVEL,
+    task_client_payload,
+    topic_by_task_id,
+    validate_interactive_answer,
 )
 
 app = Flask(__name__, static_folder='CSS', template_folder='HTML')
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
 
-SAFE_BUILTINS = {
-    'print': print,
-    'len': len,
-    'range': range,
-    'str': str,
-    'int': int,
-    'float': float,
-    'bool': bool,
-    'abs': abs,
-    'min': min,
-    'max': max,
-    'sum': sum,
-    'round': round,
-    'enumerate': enumerate,
-    'zip': zip,
-    'sorted': sorted,
-    'list': list,
-    'tuple': tuple,
-    'dict': dict,
-    'set': set,
-    'reversed': reversed,
-}
-
 user_progress = {}
+
+INTERACTIVE_SESSIONS: dict[str, InteractiveSession] = {}
+INTERACTIVE_LOCK = threading.Lock()
 
 
 class UserProgress:
@@ -60,17 +44,31 @@ class UserProgress:
     def get_module_progress(self, module_id):
         if module_id not in LESSONS:
             return 0
-        tasks = LESSONS[module_id]['tasks']
+        mod = LESSONS[module_id]
+        tasks = mod['tasks']
+        if mod.get('stub') and not tasks:
+            return 0
         if not tasks:
             return 0
         completed = sum(1 for task in tasks if task['id'] in self.completed_tasks)
         return int((completed / len(tasks)) * 100)
 
     def is_module_completed(self, module_id):
+        if module_id not in LESSONS:
+            return False
+        mod = LESSONS[module_id]
+        if mod.get('stub') and not mod['tasks']:
+            return True
+        tasks = mod['tasks']
+        if not tasks:
+            return False
         return self.get_module_progress(module_id) == 100
 
     def get_next_module(self):
-        for i in range(1, 6):
+        for i in sorted(LESSONS.keys()):
+            mod = LESSONS[i]
+            if mod.get('stub') and not mod['tasks']:
+                continue
             if not self.is_module_completed(i):
                 return i
         return None
@@ -85,6 +83,25 @@ def get_user_progress():
     return user_progress.get(user_id, UserProgress())
 
 
+def _navigate_to_task_by_id(progress: UserProgress, task_id: int) -> bool:
+    """Переключает модуль и индекс задания по id задачи. False если id не найден или модуль закрыт."""
+    if task_id not in TASK_BY_ID:
+        return False
+    for mid in sorted(LESSONS.keys()):
+        mod = LESSONS[mid]
+        if mod.get('stub'):
+            continue
+        tasks = mod.get('tasks') or []
+        for i, t in enumerate(tasks):
+            if t['id'] == task_id:
+                if mid > 1 and not progress.is_module_completed(mid - 1):
+                    return False
+                progress.current_module = mid
+                progress.current_task_index = i
+                return True
+    return False
+
+
 def build_modules_stats(progress):
     return [
         {
@@ -93,8 +110,9 @@ def build_modules_stats(progress):
             'icon': LESSONS[i]['icon'],
             'progress': progress.get_module_progress(i),
             'is_locked': i > 1 and not progress.is_module_completed(i - 1),
+            'is_stub': bool(LESSONS[i].get('stub')),
         }
-        for i in range(1, 6)
+        for i in sorted(LESSONS.keys())
         if i in LESSONS
     ]
 
@@ -117,11 +135,18 @@ def next_task_preview(progress):
     idx = progress.current_task_index
     if mid not in LESSONS:
         return None
-    tasks = LESSONS[mid]['tasks']
+    mod = LESSONS[mid]
+    tasks = mod['tasks']
+    if mod.get('stub') or not tasks:
+        return {
+            'module_title': mod['title'],
+            'module_icon': mod['icon'],
+            'text': 'Откройте модуль в разделе заданий.',
+            'task_id': None,
+        }
     if idx >= len(tasks):
         return None
     t = tasks[idx]
-    mod = LESSONS[mid]
     return {
         'module_title': mod['title'],
         'module_icon': mod['icon'],
@@ -149,24 +174,6 @@ def achievement_list(completed_n, total_n):
     return out
 
 
-def run_user_code(code):
-    buf = io.StringIO()
-    old_out = sys.stdout
-    sys.stdout = buf
-    err_line = None
-    try:
-        g = {'__builtins__': SAFE_BUILTINS}
-        exec(compile(code, '<user>', 'exec'), g, g)
-        output = buf.getvalue().strip()
-        return output, None, err_line
-    except Exception as e:
-        output = ''
-        err_line = ''.join(traceback.format_exception_only(type(e), e)).strip()
-        return output, str(e), err_line
-    finally:
-        sys.stdout = old_out
-
-
 @app.route('/')
 def home():
     progress = get_user_progress()
@@ -188,24 +195,40 @@ def home():
     )
 
 
+@app.route('/theory_schemes/<path:filename>')
+def theory_schemes_file(filename: str):
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'theory_schemes')
+    return send_from_directory(base, filename)
+
+
 @app.route('/learn')
 def learn():
     progress = get_user_progress()
+    task_id_arg = request.args.get('task_id', type=int)
+    if task_id_arg is not None and _navigate_to_task_by_id(progress, task_id_arg):
+        return redirect(url_for('learn'))
+
     current_module = progress.current_module
     current_task_index = progress.current_task_index
 
     if current_module in LESSONS:
         tasks = LESSONS[current_module]['tasks']
+        mod_obj = LESSONS[current_module]
+        if mod_obj.get('stub') or not tasks:
+            lm = level_meta(progress.total_xp)
+            return render_template(
+                'learn_stub.html',
+                user=progress,
+                current_module=mod_obj,
+                current_module_num=current_module,
+                modules_stats=build_modules_stats(progress),
+                total_tasks=TOTAL_TASKS_COUNT,
+                completed_tasks=len(progress.completed_tasks),
+                level_info=lm,
+            )
         if current_task_index >= len(tasks):
-            if progress.is_module_completed(current_module):
-                next_m = progress.get_next_module()
-                if next_m:
-                    progress.current_module = next_m
-                    progress.current_task_index = 0
-                    current_module = next_m
-                    current_task_index = 0
-                else:
-                    return render_template('module_complete.html', all_completed=True)
+            current_task_index = max(0, len(tasks) - 1)
+            progress.current_task_index = current_task_index
 
     if current_module not in LESSONS:
         current_module = 1
@@ -214,10 +237,32 @@ def learn():
 
     module = LESSONS[current_module]
     tasks = module['tasks']
+    if module.get('stub') or not tasks:
+        lm = level_meta(progress.total_xp)
+        return render_template(
+            'learn_stub.html',
+            user=progress,
+            current_module=module,
+            current_module_num=current_module,
+            modules_stats=build_modules_stats(progress),
+            total_tasks=TOTAL_TASKS_COUNT,
+            completed_tasks=len(progress.completed_tasks),
+            level_info=lm,
+        )
+
     if current_task_index >= len(tasks):
         current_task_index = 0
 
     current_task = tasks[current_task_index]
+    topics = module.get('topics') or []
+    current_topic = topic_by_task_id(current_module, current_task['id'])
+    topic_index = next((i for i, t in enumerate(topics) if t['id'] == current_topic['id']), 0) if current_topic else 0
+    tasks_in_topic = len(current_topic['tasks']) if current_topic else 1
+    task_ord_in_topic = next(
+        (j for j, t in enumerate(current_topic['tasks']) if t['id'] == current_task['id']),
+        0,
+    ) if current_topic else 0
+
     task_done = current_task['id'] in progress.completed_tasks
     lm = level_meta(progress.total_xp)
 
@@ -226,14 +271,164 @@ def learn():
         user=progress,
         current_module=module,
         current_module_num=current_module,
+        current_topic=current_topic,
+        topic_index=topic_index,
+        topics_count=len(topics),
+        task_in_topic_index=task_ord_in_topic,
+        tasks_in_topic_count=tasks_in_topic,
         current_task=current_task,
         current_task_index=current_task_index,
+        tasks_total_in_module=len(tasks),
         modules_stats=build_modules_stats(progress),
         total_tasks=TOTAL_TASKS_COUNT,
         completed_tasks=len(progress.completed_tasks),
         task_already_done=task_done,
         level_info=lm,
+        safe_task=task_client_payload(current_task),
+        topics=topics,
     )
+
+
+def _run_with_timing(code: str, stdin: str):
+    t0 = time.perf_counter()
+    result = run_python(code, stdin=stdin)
+    duration_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    return result, duration_ms
+
+
+def _cleanup_interactive_sessions() -> None:
+    stale: list[InteractiveSession] = []
+    now = time.monotonic()
+    with INTERACTIVE_LOCK:
+        for rid, sess in list(INTERACTIVE_SESSIONS.items()):
+            # Важно: не удаляем "просто завершённые" сессии здесь, иначе
+            # клиент может не успеть получить финальный done-чанк (теряется
+            # последний print/последний шаг input).
+            # Удаляем только действительно протухшие/зависшие сессии.
+            if sess.is_expired(now):
+                INTERACTIVE_SESSIONS.pop(rid, None)
+                stale.append(sess)
+    for sess in stale:
+        try:
+            sess.close()
+        except Exception:
+            pass
+
+
+@app.route('/interactive/start', methods=['POST'])
+def interactive_start():
+    """Запуск интерактивной сессии c живым poll-стримингом."""
+    get_user_progress()
+    _cleanup_interactive_sessions()
+    data = request.get_json() or {}
+    code = data.get('code', '')
+    prev = data.get('previous_run_id')
+    if prev:
+        with INTERACTIVE_LOCK:
+            prev_sess = INTERACTIVE_SESSIONS.pop(prev, None)
+        if prev_sess:
+            prev_sess.close()
+    try:
+        sess = InteractiveSession.start(code)
+    except Exception as exc:
+        return jsonify({'success': False, 'message': f'Не удалось запустить: {exc}'}), 500
+    with INTERACTIVE_LOCK:
+        INTERACTIVE_SESSIONS[sess.run_id] = sess
+    phase = sess.poll()
+    payload = {'success': True, 'run_id': sess.run_id, **phase}
+    if phase.get('status') == 'done':
+        payload['stdin_for_check'] = sess.stdin_for_check()
+        with INTERACTIVE_LOCK:
+            INTERACTIVE_SESSIONS.pop(sess.run_id, None)
+        sess.close()
+    elif phase.get('status') == 'error':
+        with INTERACTIVE_LOCK:
+            INTERACTIVE_SESSIONS.pop(sess.run_id, None)
+        sess.close()
+    return jsonify(payload)
+
+
+@app.route('/interactive/poll', methods=['POST'])
+def interactive_poll():
+    get_user_progress()
+    _cleanup_interactive_sessions()
+    data = request.get_json() or {}
+    rid = data.get('run_id')
+    if not rid:
+        return jsonify({'success': False, 'message': 'Нет активного запуска.'}), 400
+    with INTERACTIVE_LOCK:
+        sess = INTERACTIVE_SESSIONS.get(rid)
+    if not sess:
+        return jsonify({'success': False, 'message': 'Активный запуск завершён. Нажмите «Выполнить».'}), 400
+    phase = sess.poll()
+    payload = {'success': True, 'run_id': rid, **phase}
+    if phase.get('status') == 'done':
+        payload['stdin_for_check'] = sess.stdin_for_check()
+        with INTERACTIVE_LOCK:
+            INTERACTIVE_SESSIONS.pop(rid, None)
+        sess.close()
+    return jsonify(payload)
+
+
+@app.route('/interactive/input', methods=['POST'])
+def interactive_input():
+    get_user_progress()
+    _cleanup_interactive_sessions()
+    data = request.get_json() or {}
+    rid = data.get('run_id')
+    if not rid:
+        return jsonify({'success': False, 'message': 'Нет активного запуска.'}), 400
+    with INTERACTIVE_LOCK:
+        sess = INTERACTIVE_SESSIONS.get(rid)
+    if not sess:
+        return jsonify({'success': False, 'message': 'Запуск завершён. Нажмите «Выполнить» снова.'}), 400
+    line = data.get('line', '')
+    if line is None:
+        line = ''
+    line = str(line)
+    phase = sess.send_line(line)
+    payload = {'success': True, 'run_id': rid, **phase}
+    if phase.get('status') == 'done':
+        payload['stdin_for_check'] = sess.stdin_for_check()
+        with INTERACTIVE_LOCK:
+            INTERACTIVE_SESSIONS.pop(rid, None)
+        sess.close()
+    elif phase.get('status') == 'error':
+        with INTERACTIVE_LOCK:
+            INTERACTIVE_SESSIONS.pop(rid, None)
+        sess.close()
+    return jsonify(payload)
+
+
+@app.route('/interactive/abort', methods=['POST'])
+def interactive_abort():
+    get_user_progress()
+    _cleanup_interactive_sessions()
+    data = request.get_json(silent=True) or {}
+    rid = data.get('run_id')
+    if rid:
+        with INTERACTIVE_LOCK:
+            sess = INTERACTIVE_SESSIONS.pop(rid, None)
+        if sess:
+            sess.close()
+    else:
+        with INTERACTIVE_LOCK:
+            run_ids = list(INTERACTIVE_SESSIONS.keys())
+            sessions = [INTERACTIVE_SESSIONS.pop(k) for k in run_ids]
+        for sess in sessions:
+            sess.close()
+    return jsonify({'success': True})
+
+
+@app.route('/run_code', methods=['POST'])
+def run_code():
+    """Запуск кода без проверки задания и без начисления XP."""
+    data = request.get_json() or {}
+    code = data.get('code', '')
+    stdin = data.get('stdin') or ''
+    result, duration_ms = _run_with_timing(code, stdin)
+    payload = {'success': True, **result.to_api_dict(duration_ms=duration_ms)}
+    return jsonify(payload)
 
 
 @app.route('/check_code', methods=['POST'])
@@ -241,11 +436,15 @@ def check_code():
     progress = get_user_progress()
     data = request.get_json() or {}
     code = data.get('code', '')
+    stdin = data.get('stdin') or ''
     task_id = data.get('task_id')
 
     task = TASK_BY_ID.get(task_id)
     if not task:
         return jsonify({'error': 'Задание не найдено'}), 400
+
+    if task.get('type', 'code') != 'code':
+        return jsonify({'error': 'Это задание проверяется без запуска кода.'}), 400
 
     expected = task['expected']
 
@@ -259,7 +458,9 @@ def check_code():
             'total_xp': progress.total_xp,
         })
 
-    output, error_short, error_detail = run_user_code(code)
+    result, duration_ms = _run_with_timing(code, stdin)
+    output, error_short, error_detail = result.to_legacy_tuple()
+    run_fields = {**result.to_api_dict(duration_ms=duration_ms)}
 
     is_correct = False
     if error_short is None:
@@ -271,14 +472,21 @@ def check_code():
         progress.complete_task(task_id, task['xp'])
         current_module = progress.current_module
         module_completed = progress.is_module_completed(current_module)
+        keys = sorted(LESSONS.keys())
+        next_mid = None
+        if module_completed and current_module in keys:
+            i = keys.index(current_module)
+            if i + 1 < len(keys):
+                next_mid = keys[i + 1]
         return jsonify({
             'success': True,
             'output': output,
             'xp_gained': task['xp'],
             'total_xp': progress.total_xp,
             'module_completed': module_completed,
-            'next_module': current_module + 1 if module_completed and current_module + 1 in LESSONS else None,
+            'next_module': next_mid,
             'level': level_meta(progress.total_xp),
+            **run_fields,
         })
 
     return jsonify({
@@ -287,6 +495,53 @@ def check_code():
         'expected': expected,
         'error': error_short,
         'error_detail': error_detail,
+        **run_fields,
+    })
+
+
+@app.route('/check_task', methods=['POST'])
+def check_task():
+    progress = get_user_progress()
+    data = request.get_json() or {}
+    task_id = data.get('task_id')
+    answer = data.get('answer')
+    task = TASK_BY_ID.get(task_id)
+    if not task:
+        return jsonify({'error': 'Задание не найдено'}), 400
+    if task.get('type', 'code') == 'code':
+        return jsonify({'error': 'Для этого задания используйте проверку кода.'}), 400
+
+    if task_id in progress.completed_tasks:
+        return jsonify({
+            'success': True,
+            'already_completed': True,
+            'message': 'Задание уже выполнено!',
+            'xp_gained': 0,
+            'total_xp': progress.total_xp,
+        })
+
+    if validate_interactive_answer(task, answer):
+        progress.complete_task(task_id, task['xp'])
+        current_module = progress.current_module
+        module_completed = progress.is_module_completed(current_module)
+        keys = sorted(LESSONS.keys())
+        next_mid = None
+        if module_completed and current_module in keys:
+            i = keys.index(current_module)
+            if i + 1 < len(keys):
+                next_mid = keys[i + 1]
+        return jsonify({
+            'success': True,
+            'xp_gained': task['xp'],
+            'total_xp': progress.total_xp,
+            'module_completed': module_completed,
+            'next_module': next_mid,
+            'level': level_meta(progress.total_xp),
+        })
+
+    return jsonify({
+        'success': False,
+        'message': 'Пока не сходится — проверьте формулировку или подсказку и попробуйте снова.',
     })
 
 
@@ -297,18 +552,87 @@ def next_task():
     module_num = data.get('module_num')
     task_index = data.get('task_index')
 
-    if module_num in LESSONS:
-        tasks = LESSONS[module_num]['tasks']
-        if task_index + 1 < len(tasks):
-            progress.current_module = module_num
-            progress.current_task_index = task_index + 1
+    if module_num not in LESSONS:
+        return jsonify({'success': False}), 400
+
+    mod = LESSONS[module_num]
+    tasks = mod['tasks']
+
+    if mod.get('stub') or not tasks:
+        return jsonify({'success': False, 'message': 'Нет шагов для перехода'}), 400
+
+    if task_index + 1 < len(tasks):
+        progress.current_module = module_num
+        progress.current_task_index = task_index + 1
+    else:
+        nxt = None
+        for mid in sorted(LESSONS.keys()):
+            if mid <= module_num:
+                continue
+            nxt = mid
+            break
+        if nxt is not None:
+            progress.current_module = nxt
+            progress.current_task_index = 0
         else:
-            next_m = progress.get_next_module()
-            if next_m:
-                progress.current_module = next_m
-                progress.current_task_index = 0
-            else:
-                return jsonify({'completed': True})
+            return jsonify({'completed': True})
+
+    return jsonify({
+        'success': True,
+        'module': progress.current_module,
+        'task_index': progress.current_task_index,
+    })
+
+
+@app.route('/previous_task', methods=['POST'])
+def previous_task_route():
+    progress = get_user_progress()
+    data = request.get_json() or {}
+    module_num = data.get('module_num')
+    task_index = data.get('task_index')
+
+    if module_num not in LESSONS:
+        return jsonify({'success': False}), 400
+
+    mod = LESSONS[module_num]
+
+    if mod.get('stub') or not mod['tasks']:
+        prev_with_tasks = None
+        for mid in sorted(LESSONS.keys(), reverse=True):
+            if mid >= module_num:
+                continue
+            m = LESSONS[mid]
+            if m['tasks'] and not m.get('stub'):
+                prev_with_tasks = mid
+                break
+        if prev_with_tasks:
+            pt = LESSONS[prev_with_tasks]['tasks']
+            progress.current_module = prev_with_tasks
+            progress.current_task_index = len(pt) - 1
+        return jsonify({
+            'success': True,
+            'module': progress.current_module,
+            'task_index': progress.current_task_index,
+        })
+
+    if task_index > 0:
+        progress.current_module = module_num
+        progress.current_task_index = task_index - 1
+    else:
+        prev_with_tasks = None
+        for mid in sorted(LESSONS.keys(), reverse=True):
+            if mid >= module_num:
+                continue
+            m = LESSONS[mid]
+            if m['tasks'] and not m.get('stub'):
+                prev_with_tasks = mid
+                break
+        if prev_with_tasks:
+            pt = LESSONS[prev_with_tasks]['tasks']
+            progress.current_module = prev_with_tasks
+            progress.current_task_index = len(pt) - 1
+        else:
+            return jsonify({'success': False}), 400
 
     return jsonify({
         'success': True,

@@ -1,24 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Обучение — Python с нуля{% endblock %}
+{% block title %}Обучение — Мир алгоритмов: программируем на Python{% endblock %}
 {% block body_class %}page-learn{% endblock %}
 
 {% block content %}
+{% set editor_seed = (current_task.starter_code or '# Напишите код здесь...\n') %}
+{% set task_kind = current_task.get('type', 'code') %}
 <script type="application/json" id="learn-config">{{ {
   'currentModule': current_module_num,
   'currentTaskIndex': current_task_index,
   'currentTaskId': current_task.id,
   'hint': current_task.hint,
-  'starterCode': current_task.starter_code,
+  'editorTemplate': editor_seed,
   'taskDone': task_already_done,
-  'taskXpEarned': current_task.xp if task_already_done else 0
+  'taskXpEarned': current_task.xp if task_already_done else 0,
+  'taskType': task_kind,
+  'safeTask': safe_task,
+  'topicsCount': topics_count,
+  'topicIndex': topic_index,
+  'taskInTopicIndex': task_in_topic_index,
+  'tasksInTopicCount': tasks_in_topic_count,
+  'tasksTotalInModule': tasks_total_in_module,
 }|tojson }}</script>
 
-<div class="shell">
-    <aside class="sidebar sidebar-left">
-        <a class="brand-mini" href="{{ url_for('home') }}">Python</a>
+<div class="shell shell--learn">
+    <div class="learn-overlay-backdrop" id="learnNavBackdrop" aria-hidden="true"></div>
+    <aside class="sidebar sidebar-left" id="learnSidebarLeft">
+        <button type="button" class="learn-sidebar-close" id="learnCloseLeft" aria-label="Закрыть меню">×</button>
+        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: программируем на Python">Мир алгоритмов</a>
         <nav class="side-nav" aria-label="Разделы">
             <a class="side-nav__link side-nav__link--active" href="{{ url_for('home') }}">Модули</a>
-            <span class="side-nav__link side-nav__link--muted">Рейтинги</span>
             <a class="side-nav__link" href="{{ url_for('learn') }}">Задания</a>
             <span class="side-nav__link side-nav__link--muted">Профиль</span>
         </nav>
@@ -26,32 +36,67 @@
         <div class="card card--soft progress-card">
             <div class="progress-card__label">{{ current_module.icon }} Модуль {{ current_module_num }}</div>
             <div class="progress-card__percent">{{ modules_stats[current_module_num - 1].progress }}%</div>
-            <div class="duo-progress sidebar-main-progress" role="progressbar" aria-valuenow="{{ modules_stats[current_module_num - 1].progress }}" aria-valuemin="0" aria-valuemax="100">
-                <div class="duo-progress__fill" style="width: {{ modules_stats[current_module_num - 1].progress }}%"></div>
+            <div class="duo-progress sidebar-main-progress" role="progressbar"
+                aria-valuenow="{{ modules_stats[current_module_num - 1].progress }}" aria-valuemin="0"
+                aria-valuemax="100">
+                <div class="duo-progress__fill" style="width: {{ modules_stats[current_module_num - 1].progress }}%">
+                </div>
             </div>
             <div class="progress-card__stats">
                 <span><span data-completed-count>{{ completed_tasks }} / {{ total_tasks }}</span> заданий</span>
                 <span><span data-total-xp>{{ user.total_xp }}</span> XP</span>
             </div>
         </div>
+
+        {% if topics %}
+        <nav class="topic-sidebar-nav" aria-label="Темы текущего модуля">
+            <div class="topic-sidebar-nav__label">Темы модуля</div>
+            <ul class="topic-sidebar-nav__list">
+                {% for topic in topics %}
+                {% set first_task = topic.tasks[0] %}
+                <li class="topic-sidebar-nav__item">
+                    <a class="topic-sidebar-nav__link {% if current_topic and topic.id == current_topic.id %}topic-sidebar-nav__link--active{% endif %}"
+                        href="{{ url_for('learn', task_id=first_task.id) }}">{{ topic.title }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </nav>
+        {% endif %}
     </aside>
 
     <main class="main-area">
+        <div class="learn-mobile-toolbar" role="toolbar" aria-label="Навигация по курсу">
+            <button type="button" class="btn btn-ghost learn-toolbar-btn" id="learnOpenLeft" aria-controls="learnSidebarLeft" aria-expanded="false" aria-haspopup="true">
+                <span class="learn-toolbar-icon" aria-hidden="true">☰</span>
+                <span class="learn-toolbar-text">Меню</span>
+            </button>
+            <button type="button" class="btn btn-ghost learn-toolbar-btn" id="learnOpenRight" aria-controls="learnSidebarRight" aria-expanded="false" aria-haspopup="true">
+                <span class="learn-toolbar-icon" aria-hidden="true">◧</span>
+                <span class="learn-toolbar-text">Панель</span>
+            </button>
+        </div>
         <article class="card task-shell">
             <header class="task-head">
                 <div class="task-head__icon">{{ current_module.icon }}</div>
                 <div>
                     <h1 class="task-head__title">{{ current_module.title }}</h1>
                     <p class="task-head__desc">{{ current_module.description }}</p>
-                    <p class="task-pill">Задание {{ current_task_index + 1 }} из {{ current_module.tasks|length }}</p>
+                    <p class="task-pill">
+                        Тема {{ topic_index + 1 }} из {{ topics_count }}
+                        · Шаг {{ task_in_topic_index + 1 }} из {{ tasks_in_topic_count }}
+                        · Всего {{ current_task_index + 1 }} / {{ tasks_total_in_module }}
+                    </p>
+                    {% if current_topic %}
+                    <p class="task-topic-line">{{ current_topic.title }}</p>
+                    {% endif %}
                 </div>
             </header>
 
-            {% set t = current_module.theory %}
+            {% set t = current_topic.theory %}
             <section class="theory-panel" aria-labelledby="theory-heading">
                 <div class="theory-panel__head">
                     <span class="theory-panel__badge">Теория</span>
-                    <h2 id="theory-heading" class="theory-panel__title">📘 Материал модуля</h2>
+                    <h2 id="theory-heading" class="theory-panel__title">{{ current_topic.title }}</h2>
                 </div>
                 <p class="theory-intro">{{ t.intro }}</p>
                 {% for sec in t.sections %}
@@ -63,6 +108,44 @@
                     {% endif %}
                 </div>
                 {% endfor %}
+
+                {% if t.visual_blocks %}
+                <div class="theory-visual-wrap">
+                    {% for vb in t.visual_blocks %}
+                    <div class="theory-visual-card">
+                        <h3 class="theory-visual-card__title">{{ vb.title }}</h3>
+                        <p class="theory-visual-card__text">{{ vb.body }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if t.scheme_gallery %}
+                <div class="theory-schemes theory-schemes--pair" role="group" aria-label="Схемы к теме">
+                    {% for fig in t.scheme_gallery %}
+                    <figure class="theory-scheme-figure">
+                        <div class="theory-scheme-figure__media">
+                            <img class="theory-scheme-figure__img"
+                                src="{{ url_for('theory_schemes_file', filename=fig.file) }}"
+                                alt="{{ fig.caption }}" loading="lazy" decoding="async" />
+                        </div>
+                        <figcaption class="theory-scheme-figure__caption">{{ fig.num }} — {{ fig.caption }}</figcaption>
+                    </figure>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if t.schemes %}
+                <div class="theory-schemes">
+                    {% for sch in t.schemes %}
+                    <div class="theory-scheme {% if sch.placeholder %}theory-scheme--placeholder{% endif %}">
+                        <h3 class="theory-scheme__title">{{ sch.title }}</h3>
+                        <p class="theory-scheme__body">{{ sch.body }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
                 <div class="callout callout--remember">
                     <div class="callout__label">Запомни</div>
                     <ul class="callout__list">
@@ -89,7 +172,9 @@
                 <button type="button" class="btn btn-ghost" id="hintBtn">Показать подсказку</button>
             </section>
 
-            <div class="code-workbench">
+            <div id="interactiveTaskMount" class="interactive-task-mount {% if task_kind == 'code' %}is-hidden{% endif %}" aria-live="polite"></div>
+
+            <div class="code-workbench {% if task_kind != 'code' %}is-hidden{% endif %}">
                 <div class="code-workbench__toolbar">
                     <span class="code-workbench__dot"></span>
                     <span class="code-workbench__dot"></span>
@@ -98,27 +183,36 @@
                 </div>
                 <div class="code-workbench__body editor-container">
                     <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
-                    <textarea id="codeInput" class="code-input" rows="10" spellcheck="false" wrap="off">{{ current_task.starter_code }}</textarea>
+                    <textarea id="codeInput" class="code-input" rows="10" spellcheck="false"
+                        wrap="off">{{ editor_seed }}</textarea>
                 </div>
                 <div class="code-workbench__actions">
-                    <button type="button" class="btn btn-accent" id="checkCodeBtn">Проверить решение</button>
-                    <button type="button" class="btn btn-ghost" id="clearCodeBtn">Сбросить шаблон</button>
+                    <button type="button" class="btn btn-secondary" id="runCodeBtn">▶ Выполнить</button>
+                    <button type="button" class="btn btn-ghost" id="stopRunBtn" style="display:none">Остановить</button>
+                    <button type="button" class="btn btn-accent" id="checkCodeBtn">Проверить</button>
+                    <button type="button" class="btn btn-ghost" id="clearCodeBtn">Очистить редактор</button>
                 </div>
             </div>
 
             <div class="task-nav">
-                <button type="button" class="btn btn-secondary" onclick="previousTask()" {% if current_task_index == 0 %}disabled{% endif %}>Назад</button>
-                <button type="button" class="btn btn-primary" onclick="nextTask()">Далее</button>
+                <button type="button" class="btn btn-secondary" id="prevTaskBtn" {% if current_module_num==1 and current_task_index==0 %}disabled{% endif %}>Назад</button>
+                <button type="button" class="btn btn-primary" id="nextTaskNavBtn">Далее</button>
             </div>
 
-            <div class="result-panel" id="result">
-                <span class="result-panel__label">Вывод</span>
-                <pre class="result-panel__out" id="output">Готов к выполнению</pre>
-            </div>
+            <section class="result-panel edu-console-panel {% if task_kind != 'code' %}is-hidden{% endif %}" id="result" aria-live="polite">
+                <div class="edu-console-panel__head">
+                    <span class="result-panel__label">Консоль</span>
+                    <span class="edu-console__status" id="consoleStatus"></span>
+                </div>
+                <div id="runConsole" class="edu-console edu-console--idle" tabindex="-1">
+                    <p class="edu-console__placeholder">Нажмите «Выполнить» — вывод появится здесь.</p>
+                </div>
+            </section>
         </article>
     </main>
 
-    <aside class="sidebar sidebar-right">
+    <aside class="sidebar sidebar-right" id="learnSidebarRight">
+        <button type="button" class="learn-sidebar-close learn-sidebar-close--right" id="learnCloseRight" aria-label="Закрыть панель">×</button>
         <div class="card card--soft">
             <div class="level-ring-wrap">
                 <div class="level-ring" data-level-ring style="--level-pct: {{ level_info.level_pct }}%;">
@@ -140,11 +234,9 @@
             <h3 class="card__title">Модули</h3>
             <div class="module-list">
                 {% for module in modules_stats %}
-                <div
-                    class="module-row {% if module.is_locked %}module-row--locked{% endif %}"
-                    data-module-id="{{ module.id }}"
-                    {% if not module.is_locked %}onclick="loadModule({{ module.id }})" role="button" tabindex="0"{% endif %}
-                >
+                <div class="module-row {% if module.is_locked %}module-row--locked{% endif %}"
+                    data-module-id="{{ module.id }}" {% if not module.is_locked %}onclick="loadModule({{ module.id }})"
+                    role="button" tabindex="0" {% endif %}>
                     <div class="module-row__title">{{ module.icon }} {{ module.title }}</div>
                     <div class="module-progress module-progress--inline">
                         <div class="duo-progress small">

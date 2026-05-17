@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Python с нуля — курс{% endblock %}
+{% block title %}Мир алгоритмов: программируем на Python{% endblock %}
 {% block body_class %}page-home{% endblock %}
 
 {% block content %}
@@ -8,7 +8,7 @@
         <div class="home-header__inner">
             <a class="home-brand" href="{{ url_for('home') }}">
                 <span class="home-brand__mark">Py</span>
-                <span class="home-brand__text">Python с нуля</span>
+                <span class="home-brand__text">Мир алгоритмов: программируем на Python</span>
             </a>
             <a href="{{ url_for('learn') }}" class="btn btn-primary btn-header">
                 {% if has_progress %}Продолжить{% else %}Начать{% endif %}
@@ -136,7 +136,7 @@
     </main>
 
     <footer class="home-footer">
-        <span>Python Learn</span>
+        <span>Мир алгоритмов: программируем на Python</span>
         <a href="{{ url_for('learn') }}">Тренажёр</a>
     </footer>
 </div>
