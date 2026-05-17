@@ -9,6 +9,8 @@ import sys
 import tempfile
 from dataclasses import dataclass
 
+from .host import child_preexec, minimal_child_env, runner_temp_dir
+
 # Таймаут по умолчанию (секунды): защита от бесконечных циклов и зависаний на input().
 DEFAULT_TIMEOUT_SEC = 8.0
 
@@ -90,28 +92,29 @@ def run_python(
     Это не песочница уровня ОС: доступ к файловой системе остаётся как у обычного Python.
     """
     path: str | None = None
+    tmp_dir = runner_temp_dir()
     try:
-        fd, path = tempfile.mkstemp(suffix=".py", prefix="usercode_")
+        fd, path = tempfile.mkstemp(suffix=".py", prefix="usercode_", dir=tmp_dir)
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as tmp:
             tmp.write(code)
         # Файл закрыт — на Windows скрипт можно запускать без блокировки на запись.
 
-        child_env = os.environ.copy()
-        child_env.setdefault("PYTHONUTF8", "1")
-        child_env.setdefault("PYTHONIOENCODING", "utf-8")
-
-        completed = subprocess.run(
-            [sys.executable, "-X", "utf8", "-I", path],
-            input=stdin,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_sec,
-            cwd=os.path.dirname(path) or None,
-            check=False,
-            env=child_env,
-        )
+        run_kwargs: dict = {
+            "args": [sys.executable, "-X", "utf8", "-I", path],
+            "input": stdin,
+            "capture_output": True,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "timeout": timeout_sec,
+            "cwd": tmp_dir,
+            "check": False,
+            "env": minimal_child_env(),
+        }
+        preexec = child_preexec(timeout_sec)
+        if preexec is not None:
+            run_kwargs["preexec_fn"] = preexec
+        completed = subprocess.run(**run_kwargs)
         stdout = _truncate(completed.stdout or "", MAX_STDIO_CHARS)
         stderr = _truncate(completed.stderr or "", MAX_STDIO_CHARS)
         return RunResult(

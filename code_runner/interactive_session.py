@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from .error_friendly import explain_stderr
+from .host import child_preexec, minimal_child_env, runner_temp_dir
 
 INTERACTIVE_MARKER = "\n\uffffEDU_CONSOLE_INPUT_WAIT\uffff\n"
 DEFAULT_SESSION_TIMEOUT_SEC = 180.0
@@ -46,13 +47,6 @@ exec(compile(_code, _user_path, "exec"), {{"__name__": "__main__", "__builtins__
 '''
 
 
-def _child_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env.setdefault("PYTHONUTF8", "1")
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    return env
-
-
 @dataclass
 class InteractiveSession:
     run_id: str
@@ -80,8 +74,9 @@ class InteractiveSession:
     @classmethod
     def start(cls, code: str) -> InteractiveSession:
         run_id = secrets.token_hex(12)
-        fd_u, user_path = tempfile.mkstemp(suffix=".py", prefix="edu_user_")
-        fd_h, harness_path = tempfile.mkstemp(suffix=".py", prefix="edu_harness_")
+        tmp_dir = runner_temp_dir()
+        fd_u, user_path = tempfile.mkstemp(suffix=".py", prefix="edu_user_", dir=tmp_dir)
+        fd_h, harness_path = tempfile.mkstemp(suffix=".py", prefix="edu_harness_", dir=tmp_dir)
         try:
             with os.fdopen(fd_u, "w", encoding="utf-8", newline="\n") as uf:
                 uf.write(code)
@@ -95,18 +90,22 @@ class InteractiveSession:
                     pass
             raise
 
-        proc = subprocess.Popen(
-            [sys.executable, "-X", "utf8", "-I", harness_path, user_path],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=os.path.dirname(harness_path) or None,
-            env=_child_env(),
-            bufsize=1,
-        )
+        popen_kwargs: dict = {
+            "args": [sys.executable, "-X", "utf8", "-I", harness_path, user_path],
+            "stdin": subprocess.PIPE,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "cwd": tmp_dir,
+            "env": minimal_child_env(),
+            "bufsize": 1,
+        }
+        preexec = child_preexec(DEFAULT_SESSION_TIMEOUT_SEC)
+        if preexec is not None:
+            popen_kwargs["preexec_fn"] = preexec
+        proc = subprocess.Popen(**popen_kwargs)
         sess = cls(run_id=run_id, user_path=user_path, harness_path=harness_path, proc=proc)
         sess._start_pumps()
         return sess

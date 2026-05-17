@@ -19,7 +19,13 @@ from course_data import (
 )
 
 app = Flask(__name__, static_folder='CSS', template_folder='HTML')
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
+
+
+@app.route('/health')
+def health():
+    """Проверка для Railway и других PaaS (без сессии и без запуска кода)."""
+    return 'ok', 200
 
 user_progress = {}
 
@@ -679,5 +685,6 @@ def api_session():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true', 'yes')
+    app.run(host='0.0.0.0', port=port, debug=debug)
