@@ -7,6 +7,125 @@
     var activeTerminalDocKeyHandler = null;
     var interactivePollTimer = null;
     var interactivePollInFlight = false;
+    var LEARN_SCROLL_KEY = 'learnScrollToTop';
+
+    function markLearnScrollToTop() {
+        try {
+            sessionStorage.setItem(LEARN_SCROLL_KEY, '1');
+        } catch (e) {}
+    }
+
+    function scrollLearnPageToTopSmooth() {
+        try {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (e) {
+            window.scrollTo(0, 0);
+        }
+    }
+
+    function applyLearnScrollOnLoad() {
+        try {
+            if (sessionStorage.getItem(LEARN_SCROLL_KEY)) {
+                sessionStorage.removeItem(LEARN_SCROLL_KEY);
+                if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+                scrollLearnPageToTopSmooth();
+            }
+        } catch (e) {}
+    }
+
+    function reloadLearnPage(scrollOnTopicChange) {
+        if (scrollOnTopicChange) {
+            markLearnScrollToTop();
+            window.location.href = '/learn';
+            return;
+        }
+        location.reload();
+    }
+
+    function refreshLearnTaskInPlace() {
+        abortInteractive(true);
+        clearTimeout(saveDebounceTimer);
+        lastStdinForCheck = '';
+        var prevTopicId = cfg.currentTopicId || '';
+        var scrollAnchor = window.scrollY;
+        return fetch(window.location.pathname + window.location.search, {
+            credentials: 'same-origin',
+            headers: { 'Cache-Control': 'no-cache' },
+        })
+            .then(function (r) {
+                return r.text();
+            })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var newCfgEl = doc.getElementById('learn-config');
+                if (newCfgEl) {
+                    var nextCfg;
+                    try {
+                        nextCfg = JSON.parse(newCfgEl.textContent);
+                    } catch (e) {
+                        nextCfg = null;
+                    }
+                    if (nextCfg && nextCfg.currentTopicId && prevTopicId && nextCfg.currentTopicId !== prevTopicId) {
+                        markLearnScrollToTop();
+                        window.location.href = '/learn';
+                        return;
+                    }
+                }
+                var newDyn = doc.getElementById('learn-dynamic-content');
+                var curDyn = document.getElementById('learn-dynamic-content');
+                if (!newDyn || !curDyn) {
+                    location.reload();
+                    return;
+                }
+                curDyn.innerHTML = newDyn.innerHTML;
+                var newPill = doc.querySelector('.task-pill');
+                var curPill = document.querySelector('.task-pill');
+                if (newPill && curPill) curPill.innerHTML = newPill.innerHTML;
+                var elCfg = document.getElementById('learn-config');
+                if (elCfg && newCfgEl) {
+                    elCfg.textContent = newCfgEl.textContent;
+                    cfg = JSON.parse(elCfg.textContent);
+                }
+                bindLearnTaskUi();
+                if (window.scrollY !== scrollAnchor) {
+                    window.scrollTo(0, scrollAnchor);
+                }
+            });
+    }
+
+    function isTopicChangedNav(data) {
+        if (!data) return false;
+        var cur = data.current_topic_id;
+        var nxt = data.next_topic_id;
+        if (cur != null && cur !== '' && nxt != null && nxt !== '') {
+            return String(cur) !== String(nxt);
+        }
+        return data.topic_changed === true;
+    }
+
+    function handleTaskNavResponse(data) {
+        if (!data || !data.success) return;
+        if (isTopicChangedNav(data)) {
+            markLearnScrollToTop();
+            window.location.href = '/learn';
+            return;
+        }
+        refreshLearnTaskInPlace().catch(function () {
+            location.reload();
+        });
+    }
+
+    function initLearnNavigationScroll() {
+        applyLearnScrollOnLoad();
+
+        document.querySelectorAll('.topic-sidebar-nav__link[href]').forEach(function (link) {
+            link.addEventListener('click', function () {
+                if (!link.classList.contains('topic-sidebar-nav__link--active')) {
+                    markLearnScrollToTop();
+                }
+            });
+        });
+    }
 
     function cleanupActiveTerminalDocKeyHandler() {
         if (!activeTerminalDocKeyHandler) return;
@@ -1157,7 +1276,9 @@
                     setTimeout(function () {
                         location.reload();
                     }, 1200);
-                } else if (data.success) location.reload();
+                } else {
+                    handleTaskNavResponse(data);
+                }
             });
     }
 
@@ -1175,12 +1296,15 @@
                 return r.json();
             })
             .then(function (data) {
-                if (data.success) location.reload();
+                handleTaskNavResponse(data);
             });
     }
 
     function loadModule(moduleId) {
         saveCodeToStorage();
+        if (moduleId !== cfg.currentModule) {
+            markLearnScrollToTop();
+        }
         window.location.href = '/load_module/' + moduleId;
     }
 
@@ -1188,6 +1312,7 @@
         if (!confirm('Сбросить весь прогресс?')) return;
         localStorage.clear();
         fetch('/reset_progress', { method: 'POST' }).then(function () {
+            markLearnScrollToTop();
             location.reload();
         });
     }
@@ -1221,20 +1346,7 @@
         scheduleSaveCode();
     }
 
-    function init() {
-        var elCfg = document.getElementById('learn-config');
-        if (!elCfg) return;
-        try {
-            cfg = JSON.parse(elCfg.textContent);
-        } catch (e) {
-            return;
-        }
-
-        window.nextTask = nextTask;
-        window.previousTask = previousTask;
-        window.loadModule = loadModule;
-        window.resetProgress = resetProgress;
-
+    function bindLearnTaskUi() {
         var tt = cfg.taskType || 'code';
 
         var hintBtn = document.getElementById('hintBtn');
@@ -1261,9 +1373,6 @@
 
         if (tt !== 'code') {
             mountInteractiveTask();
-            window.addEventListener('beforeunload', function () {
-                clearTimeout(saveDebounceTimer);
-            });
             return;
         }
 
@@ -1280,12 +1389,6 @@
         });
         ta.addEventListener('keydown', onTabKey);
         ta.addEventListener('scroll', syncScroll);
-
-        window.addEventListener('resize', updateLineNumbers);
-        window.addEventListener('beforeunload', function () {
-            clearTimeout(saveDebounceTimer);
-            saveCodeToStorage();
-        });
 
         setTimeout(updateLineNumbers, 80);
 
@@ -1330,6 +1433,34 @@
             }
         } else {
             renderIdleConsole();
+        }
+    }
+
+    function init() {
+        var elCfg = document.getElementById('learn-config');
+        if (!elCfg) return;
+        try {
+            cfg = JSON.parse(elCfg.textContent);
+        } catch (e) {
+            return;
+        }
+
+        initLearnNavigationScroll();
+
+        window.nextTask = nextTask;
+        window.previousTask = previousTask;
+        window.loadModule = loadModule;
+        window.resetProgress = resetProgress;
+
+        bindLearnTaskUi();
+
+        if (!window._learnPageHooksBound) {
+            window._learnPageHooksBound = true;
+            window.addEventListener('resize', updateLineNumbers);
+            window.addEventListener('beforeunload', function () {
+                clearTimeout(saveDebounceTimer);
+                saveCodeToStorage();
+            });
         }
     }
 

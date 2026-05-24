@@ -85,8 +85,9 @@ def get_user_progress():
     if not user_id:
         user_id = secrets.token_hex(8)
         session['user_id'] = user_id
+    if user_id not in user_progress:
         user_progress[user_id] = UserProgress()
-    return user_progress.get(user_id, UserProgress())
+    return user_progress[user_id]
 
 
 def _navigate_to_task_by_id(progress: UserProgress, task_id: int) -> bool:
@@ -551,12 +552,24 @@ def check_task():
     })
 
 
+def _topic_id_at(module_id: int, task_index: int) -> str | None:
+    """topic_id из плоского списка заданий модуля (совпадает с темой в sidebar)."""
+    try:
+        mid = int(module_id)
+        idx = int(task_index)
+    except (TypeError, ValueError):
+        return None
+    tasks = LESSONS.get(mid, {}).get('tasks') or []
+    if idx < 0 or idx >= len(tasks):
+        return None
+    return tasks[idx].get('topic_id')
+
+
 @app.route('/next_task', methods=['POST'])
 def next_task():
     progress = get_user_progress()
-    data = request.get_json() or {}
-    module_num = data.get('module_num')
-    task_index = data.get('task_index')
+    module_num = progress.current_module
+    task_index = progress.current_task_index
 
     if module_num not in LESSONS:
         return jsonify({'success': False}), 400
@@ -566,6 +579,8 @@ def next_task():
 
     if mod.get('stub') or not tasks:
         return jsonify({'success': False, 'message': 'Нет шагов для перехода'}), 400
+
+    old_topic_id = _topic_id_at(module_num, task_index)
 
     if task_index + 1 < len(tasks):
         progress.current_module = module_num
@@ -583,24 +598,33 @@ def next_task():
         else:
             return jsonify({'completed': True})
 
+    new_topic_id = _topic_id_at(progress.current_module, progress.current_task_index)
+    topic_changed = bool(
+        old_topic_id and new_topic_id and old_topic_id != new_topic_id
+    )
+
     return jsonify({
         'success': True,
         'module': progress.current_module,
         'task_index': progress.current_task_index,
+        'topic_changed': topic_changed,
+        'current_topic_id': old_topic_id,
+        'next_topic_id': new_topic_id,
     })
 
 
 @app.route('/previous_task', methods=['POST'])
 def previous_task_route():
     progress = get_user_progress()
-    data = request.get_json() or {}
-    module_num = data.get('module_num')
-    task_index = data.get('task_index')
+    module_num = progress.current_module
+    task_index = progress.current_task_index
 
     if module_num not in LESSONS:
         return jsonify({'success': False}), 400
 
     mod = LESSONS[module_num]
+
+    old_topic_id = _topic_id_at(module_num, task_index) if mod.get('tasks') else None
 
     if mod.get('stub') or not mod['tasks']:
         prev_with_tasks = None
@@ -615,10 +639,17 @@ def previous_task_route():
             pt = LESSONS[prev_with_tasks]['tasks']
             progress.current_module = prev_with_tasks
             progress.current_task_index = len(pt) - 1
+        new_topic_id = _topic_id_at(progress.current_module, progress.current_task_index)
+        topic_changed = bool(
+            old_topic_id and new_topic_id and old_topic_id != new_topic_id
+        )
         return jsonify({
             'success': True,
             'module': progress.current_module,
             'task_index': progress.current_task_index,
+            'topic_changed': topic_changed,
+            'current_topic_id': old_topic_id,
+            'next_topic_id': new_topic_id,
         })
 
     if task_index > 0:
@@ -640,10 +671,18 @@ def previous_task_route():
         else:
             return jsonify({'success': False}), 400
 
+    new_topic_id = _topic_id_at(progress.current_module, progress.current_task_index)
+    topic_changed = bool(
+        old_topic_id and new_topic_id and old_topic_id != new_topic_id
+    )
+
     return jsonify({
         'success': True,
         'module': progress.current_module,
         'task_index': progress.current_task_index,
+        'topic_changed': topic_changed,
+        'current_topic_id': old_topic_id,
+        'next_topic_id': new_topic_id,
     })
 
 

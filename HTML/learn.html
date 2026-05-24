@@ -3,6 +3,21 @@
 {% block body_class %}page-learn{% endblock %}
 
 {% block content %}
+<script>
+(function () {
+    try {
+        if (sessionStorage.getItem('learnScrollToTop')) {
+            sessionStorage.removeItem('learnScrollToTop');
+            if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+            try {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (e) {
+                window.scrollTo(0, 0);
+            }
+        }
+    } catch (e) {}
+})();
+</script>
 {% set editor_seed = (current_task.starter_code or '# Напишите код здесь...\n') %}
 {% set task_kind = current_task.get('type', 'code') %}
 <script type="application/json" id="learn-config">{{ {
@@ -20,13 +35,14 @@
   'taskInTopicIndex': task_in_topic_index,
   'tasksInTopicCount': tasks_in_topic_count,
   'tasksTotalInModule': tasks_total_in_module,
+  'currentTopicId': current_topic.id if current_topic else '',
 }|tojson }}</script>
 
 <div class="shell shell--learn">
     <div class="learn-overlay-backdrop" id="learnNavBackdrop" aria-hidden="true"></div>
     <aside class="sidebar sidebar-left" id="learnSidebarLeft">
         <button type="button" class="learn-sidebar-close" id="learnCloseLeft" aria-label="Закрыть меню">×</button>
-        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: программируем на Python">Мир алгоритмов</a>
+        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: программируем на Python">Мир алгоритмов: программируем на Python</a>
         <nav class="side-nav" aria-label="Разделы">
             <a class="side-nav__link side-nav__link--active" href="{{ url_for('home') }}">Модули</a>
             <a class="side-nav__link" href="{{ url_for('learn') }}">Задания</a>
@@ -79,16 +95,13 @@
             <header class="task-head">
                 <div class="task-head__icon">{{ current_module.icon }}</div>
                 <div>
-                    <h1 class="task-head__title">{{ current_module.title }}</h1>
-                    <p class="task-head__desc">{{ current_module.description }}</p>
+                    <h1 class="task-head__title">{% if current_topic %}{{ current_topic.title }}{% else %}{{ current_module.title }}{% endif %}</h1>
+                    <p class="task-head__desc">{% if current_topic and current_topic.summary %}{{ current_topic.summary }}{% else %}{{ current_module.description }}{% endif %}</p>
                     <p class="task-pill">
                         Тема {{ topic_index + 1 }} из {{ topics_count }}
                         · Шаг {{ task_in_topic_index + 1 }} из {{ tasks_in_topic_count }}
                         · Всего {{ current_task_index + 1 }} / {{ tasks_total_in_module }}
                     </p>
-                    {% if current_topic %}
-                    <p class="task-topic-line">{{ current_topic.title }}</p>
-                    {% endif %}
                 </div>
             </header>
 
@@ -166,6 +179,7 @@
                 </div>
             </section>
 
+            <div id="learn-dynamic-content">
             <section class="task-panel">
                 <h2 class="task-panel__title">Текущее задание</h2>
                 <p class="task-panel__text"><strong>{{ current_task.text }}</strong></p>
@@ -208,6 +222,7 @@
                     <p class="edu-console__placeholder">Нажмите «Выполнить» — вывод появится здесь.</p>
                 </div>
             </section>
+            </div>
         </article>
     </main>
 

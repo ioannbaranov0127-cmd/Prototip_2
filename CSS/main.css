@@ -31,7 +31,7 @@
 }
 
 html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
 }
 
 body {
@@ -1455,6 +1455,20 @@ a.side-nav__link:hover {
     display: none;
 }
 
+/* Desktop: боковые панели остаются в viewport при прокрутке контента */
+@media (min-width: 901px) {
+    .page-learn .sidebar {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        min-height: 100vh;
+        max-height: 100vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+}
+
 @media (max-width: 1280px) {
     .page-learn .shell.shell--learn {
         grid-template-columns: minmax(160px, 200px) minmax(0, 1fr) minmax(200px, 260px);
@@ -1494,6 +1508,11 @@ a.side-nav__link:hover {
         display: block;
         position: relative;
         min-height: 100vh;
+    }
+
+    /* overflow-x на .main-area ломает position:sticky у панели на мобильных */
+    .page-learn .main-area {
+        overflow-x: visible;
     }
 
     .page-learn .learn-mobile-toolbar {
@@ -1639,6 +1658,10 @@ a.side-nav__link:hover {
 
     .page-learn .task-head {
         flex-wrap: wrap;
+    }
+
+    body.page-home .home-layout {
+        overflow: visible;
     }
 }
 
