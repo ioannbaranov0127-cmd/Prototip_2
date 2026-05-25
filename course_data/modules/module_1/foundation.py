@@ -1,15 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Структура курса: модули → темы → задания.
-Типы заданий: code, quiz, ordering, matching, fill_gaps.
-В theory темы опционально: scheme_gallery — список {file, num, caption} для сетки SVG (см. тему 1).
-"""
+"""Темы 1–5 модуля 1: готовый контент. Разбивайте на topic_XX.py по мере роста курса."""
 
 from __future__ import annotations
 
-MODULE_IDS: list[int] = [1, 2]
-
-# --- Модуль 1: «Основы программирования на Python», темы 1–5 ---
+# --- Модуль 1: темы 1–5 ---
 
 _M1_TOPIC1_THEORY = {
     'intro': (
@@ -595,116 +589,5 @@ def _tasks_module1() -> list[dict]:
     ]
 
 
-MODULES: dict[int, dict] = {
-    1: {
-        'id': 1,
-        'title': 'Основы программирования на Python',
-        'icon': '📘',
-        'description': (
-            'Пять тем: от алгоритмического мышления до переменных и учебного проекта '
-            '«Калькулятор калорий», который растёт вместе с вами.'
-        ),
-        'topics': _tasks_module1(),
-    },
-    2: {
-        'id': 2,
-        'title': 'Модуль 2 — в разработке',
-        'icon': '🚧',
-        'description': 'Заглушка следующего модуля. Содержание будет добавлено позже.',
-        'stub': True,
-        'topics': [],
-    },
-}
-
-
-def _flatten_module_tasks(module: dict) -> list[dict]:
-    out: list[dict] = []
-    for topic in module.get('topics') or []:
-        tid = topic['id']
-        ttitle = topic['title']
-        for task in topic.get('tasks') or []:
-            row = {**task, 'topic_id': tid, 'topic_title': ttitle}
-            if 'type' not in row:
-                row['type'] = 'code'
-            out.append(row)
-    return out
-
-
-LESSONS: dict[int, dict] = {}
-for _mid, _mod in MODULES.items():
-    LESSONS[_mid] = {**_mod, 'tasks': _flatten_module_tasks(_mod)}
-
-TOTAL_TASKS_COUNT = sum(len(LESSONS[m]['tasks']) for m in LESSONS if not LESSONS[m].get('stub'))
-
-TASK_BY_ID: dict[int, dict] = {}
-for _mod in LESSONS.values():
-    for _t in _mod['tasks']:
-        TASK_BY_ID[_t['id']] = _t
-
-XP_PER_LEVEL = 50
-
-ACHIEVEMENTS = [
-    {'id': 'start', 'icon': '🌱', 'title': 'Первый шаг', 'description': 'Решите первое задание', 'min_completed': 1},
-    {'id': 'five', 'icon': '⭐', 'title': 'Пять задач', 'description': 'Решите 5 заданий', 'min_completed': 5},
-    {'id': 'half', 'icon': '📗', 'title': 'Половина пути', 'description': 'Решите больше половины заданий курса', 'min_fraction': 0.5},
-    {'id': 'done', 'icon': '🏆', 'title': 'Курс пройден', 'description': 'Выполните все задания', 'min_fraction': 1.0},
-]
-
-
-def topic_by_task_id(module_id: int, task_id: int) -> dict | None:
-    """Возвращает объект темы для задания."""
-    mod = LESSONS.get(module_id)
-    if not mod:
-        return None
-    for topic in mod.get('topics') or []:
-        for t in topic.get('tasks') or []:
-            if t['id'] == task_id:
-                return topic
-    return None
-
-
-def task_client_payload(task: dict) -> dict:
-    """Данные задания для браузера (без полей проверки ответа)."""
-    ttype = task.get('type', 'code')
-    base: dict = {
-        'id': task['id'],
-        'type': ttype,
-        'text': task['text'],
-        'hint': task.get('hint', ''),
-        'xp': task.get('xp', 0),
-    }
-    if ttype == 'code':
-        base['starter_code'] = task.get('starter_code') or ''
-    elif ttype == 'quiz':
-        base['options'] = task['options']
-    elif ttype == 'ordering':
-        base['items'] = list(task['items'])
-    elif ttype == 'matching':
-        base['left'] = list(task['left'])
-        base['right'] = list(task['right'])
-    elif ttype == 'fill_gaps':
-        base['template'] = task['template']
-        base['blank_count'] = len(task.get('answers') or [])
-    return base
-
-
-def validate_interactive_answer(task: dict, answer) -> bool:
-    """Проверка ответа для не-кодовых заданий."""
-    ttype = task.get('type', 'code')
-    if ttype == 'code':
-        return False
-    if ttype == 'quiz':
-        return answer == task.get('correct')
-    if ttype == 'ordering':
-        return answer == task.get('correct_order')
-    if ttype == 'matching':
-        exp = task.get('correct_pairs')
-        if not isinstance(answer, list) or len(answer) != len(exp):
-            return False
-        return list(answer) == list(exp)
-    if ttype == 'fill_gaps':
-        exp = task.get('answers')
-        if not isinstance(answer, list) or len(answer) != len(exp):
-            return False
-        return [str(x).strip() for x in answer] == [str(x).strip() for x in exp]
-    return False
+def get_topics() -> list[dict]:
+    return _tasks_module1()
