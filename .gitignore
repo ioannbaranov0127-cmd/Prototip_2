@@ -23,3 +23,6 @@ Thumbs.db
 # Локальные проверки / артефакты
 *.log
 .pytest_cache/
+
+# Node (сборка редактора локально: npm run build:editor)
+node_modules/

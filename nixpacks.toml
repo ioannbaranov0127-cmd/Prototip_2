@@ -1,0 +1,2 @@
+# Только Python: bundle редактора уже в CSS/js/code-editor.bundle.js
+providers = ["python"]
