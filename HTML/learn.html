@@ -142,7 +142,7 @@
                                 src="{{ url_for('theory_schemes_file', filename=fig.file) }}"
                                 alt="{{ fig.caption }}" loading="lazy" decoding="async" />
                         </div>
-                        <figcaption class="theory-scheme-figure__caption">{{ fig.num }} — {{ fig.caption }}</figcaption>
+                        <figcaption class="theory-scheme-figure__caption">{% if fig.num %}{{ fig.num }} — {% endif %}{{ fig.caption }}</figcaption>
                     </figure>
                     {% endfor %}
                 </div>

@@ -17,7 +17,7 @@ def _module_1() -> dict:
     return {
         'id': 1,
         'title': 'Основы программирования на Python',
-        'icon': '📘',
+        'icon': '🍽️',
         'description': (
             f'Курс «{COURSE["title"]}»: проект «{COURSE["project_name"]}» '
             f'растёт от темы к теме. Опубликовано тем: {published} из {total}.'
@@ -31,7 +31,7 @@ def _module_2() -> dict:
     return {
         'id': 2,
         'title': 'Списки и развитие проекта',
-        'icon': '📗',
+        'icon': '📋',
         'description': (
             f'Продолжение «{COURSE["project_name"]}»: повторение базы, списки продуктов '
             f'и методы append, remove, len.'
