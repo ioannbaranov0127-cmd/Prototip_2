@@ -101,8 +101,6 @@ def _navigate_to_task_by_id(progress: UserProgress, task_id: int) -> bool:
         tasks = mod.get('tasks') or []
         for i, t in enumerate(tasks):
             if t['id'] == task_id:
-                if mid > 1 and not progress.is_module_completed(mid - 1):
-                    return False
                 progress.current_module = mid
                 progress.current_task_index = i
                 return True
@@ -116,7 +114,7 @@ def build_modules_stats(progress):
             'title': LESSONS[i]['title'],
             'icon': LESSONS[i]['icon'],
             'progress': progress.get_module_progress(i),
-            'is_locked': i > 1 and not progress.is_module_completed(i - 1),
+            'is_locked': bool(LESSONS[i].get('stub')),
             'is_stub': bool(LESSONS[i].get('stub')),
         }
         for i in sorted(LESSONS.keys())
@@ -697,8 +695,8 @@ def reset_progress():
 @app.route('/load_module/<int:module_id>')
 def load_module(module_id):
     progress = get_user_progress()
-    if module_id > 1 and not progress.is_module_completed(module_id - 1):
-        return jsonify({'error': 'Модуль заблокирован'}), 403
+    if module_id in LESSONS and LESSONS[module_id].get('stub'):
+        return jsonify({'error': 'Модуль в разработке'}), 403
     if module_id in LESSONS:
         progress.current_module = module_id
         progress.current_task_index = 0

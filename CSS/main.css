@@ -546,6 +546,27 @@ a.side-nav__link:hover {
 
 .editor-container {
     flex: 1;
+    min-width: 0;
+}
+
+.code-editor-mount {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 200px;
+}
+
+.code-editor-mount .cm-editor {
+    width: 100%;
+    min-height: 200px;
+    height: auto;
+    border: none;
+    background: #fff;
+}
+
+.code-editor-mount .cm-editor .cm-scroller {
+    overflow: auto;
+    max-width: 100%;
 }
 
 .line-numbers {

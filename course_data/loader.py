@@ -6,6 +6,7 @@ from __future__ import annotations
 from course_data.achievements import ACHIEVEMENTS
 from course_data.constants import COURSE, MODULE_IDS, XP_PER_LEVEL
 from course_data.modules.module_1 import get_all_topics as get_module_1_topics
+from course_data.modules.module_2 import get_all_topics as get_module_2_topics
 from course_data.registry import flatten_module_tasks
 
 
@@ -25,20 +26,23 @@ def _module_1() -> dict:
     }
 
 
-def _module_2_stub() -> dict:
+def _module_2() -> dict:
+    topics = get_module_2_topics()
     return {
         'id': 2,
-        'title': 'Модуль 2 — в разработке',
-        'icon': '🚧',
-        'description': 'Заглушка следующего модуля. Содержание будет добавлено позже.',
-        'stub': True,
-        'topics': [],
+        'title': 'Списки и развитие проекта',
+        'icon': '📗',
+        'description': (
+            f'Продолжение «{COURSE["project_name"]}»: повторение базы, списки продуктов '
+            f'и методы append, remove, len.'
+        ),
+        'topics': topics,
     }
 
 
 MODULES: dict[int, dict] = {
     1: _module_1(),
-    2: _module_2_stub(),
+    2: _module_2(),
 }
 
 LESSONS: dict[int, dict] = {}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Мир алгоритмов: программируем на Python{% endblock %}
+{% block title %}Мир алгоритмов: проектируем на Python{% endblock %}
 {% block body_class %}page-home{% endblock %}
 
 {% block content %}
@@ -8,7 +8,7 @@
         <div class="home-header__inner">
             <a class="home-brand" href="{{ url_for('home') }}">
                 <span class="home-brand__mark">Py</span>
-                <span class="home-brand__text">Мир алгоритмов: программируем на Python</span>
+                <span class="home-brand__text">Мир алгоритмов: проектируем на Python</span>
             </a>
             <a href="{{ url_for('learn') }}" class="btn btn-primary btn-header">
                 {% if has_progress %}Продолжить{% else %}Начать{% endif %}
@@ -51,7 +51,8 @@
         <div class="home-grid-3">
             <div class="card card--soft stat-card">
                 <div class="stat-card__label">Текущий прогресс</div>
-                <div class="duo-progress duo-progress--fat" role="progressbar" aria-valuenow="{{ overall_progress_pct }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="duo-progress duo-progress--fat" role="progressbar"
+                    aria-valuenow="{{ overall_progress_pct }}" aria-valuemin="0" aria-valuemax="100">
                     <div class="duo-progress__fill" style="width: {{ overall_progress_pct }}%;"></div>
                 </div>
                 <p class="stat-card__value">{{ completed_tasks }} / {{ total_tasks }} заданий</p>
@@ -66,7 +67,8 @@
                         <div class="duo-progress">
                             <div class="duo-progress__fill" style="width: {{ level_info.level_pct }}%;"></div>
                         </div>
-                        <span class="level-inline__xp">{{ level_info.xp_in_level }} / {{ level_info.xp_to_next }} XP</span>
+                        <span class="level-inline__xp">{{ level_info.xp_in_level }} / {{ level_info.xp_to_next }}
+                            XP</span>
                     </div>
                 </div>
                 <p class="stat-card__hint">Каждые {{ level_info.xp_to_next }} XP — новый уровень</p>
@@ -107,36 +109,36 @@
             <p class="section-lead">Модули открываются по очереди. Нажмите на карточку, чтобы перейти.</p>
             <div class="home-modules">
                 {% for module in modules_stats %}
-                    {% if module.is_locked %}
-                    <div class="module-tile module-tile--locked">
-                        <div class="module-tile__head">
-                            <span class="module-tile__icon">{{ module.icon }}</span>
-                            <span class="module-tile__name">{{ module.title }}</span>
-                        </div>
-                        <div class="duo-progress small">
-                            <div class="duo-progress__fill" style="width: {{ module.progress }}%"></div>
-                        </div>
-                        <span class="module-tile__lock">Сначала завершите предыдущий модуль</span>
+                {% if module.is_locked %}
+                <div class="module-tile module-tile--locked">
+                    <div class="module-tile__head">
+                        <span class="module-tile__icon">{{ module.icon }}</span>
+                        <span class="module-tile__name">{{ module.title }}</span>
                     </div>
-                    {% else %}
-                    <a href="{{ url_for('load_module', module_id=module.id) }}" class="module-tile">
-                        <div class="module-tile__head">
-                            <span class="module-tile__icon">{{ module.icon }}</span>
-                            <span class="module-tile__name">{{ module.title }}</span>
-                        </div>
-                        <div class="duo-progress small">
-                            <div class="duo-progress__fill" style="width: {{ module.progress }}%"></div>
-                        </div>
-                        <span class="module-tile__pct">{{ module.progress }}%</span>
-                    </a>
-                    {% endif %}
+                    <div class="duo-progress small">
+                        <div class="duo-progress__fill" style="width: {{ module.progress }}%"></div>
+                    </div>
+                    <span class="module-tile__lock">Сначала завершите предыдущий модуль</span>
+                </div>
+                {% else %}
+                <a href="{{ url_for('load_module', module_id=module.id) }}" class="module-tile">
+                    <div class="module-tile__head">
+                        <span class="module-tile__icon">{{ module.icon }}</span>
+                        <span class="module-tile__name">{{ module.title }}</span>
+                    </div>
+                    <div class="duo-progress small">
+                        <div class="duo-progress__fill" style="width: {{ module.progress }}%"></div>
+                    </div>
+                    <span class="module-tile__pct">{{ module.progress }}%</span>
+                </a>
+                {% endif %}
                 {% endfor %}
             </div>
         </section>
     </main>
 
     <footer class="home-footer">
-        <span>Мир алгоритмов: программируем на Python</span>
+        <span>Мир алгоритмов: проектируем на Python</span>
         <a href="{{ url_for('learn') }}">Тренажёр</a>
     </footer>
 </div>

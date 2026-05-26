@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Обучение — Мир алгоритмов: программируем на Python{% endblock %}
+{% block title %}Обучение — Мир алгоритмов: проектируем на Python{% endblock %}
 {% block body_class %}page-learn{% endblock %}
 
 {% block content %}
@@ -42,7 +42,7 @@
     <div class="learn-overlay-backdrop" id="learnNavBackdrop" aria-hidden="true"></div>
     <aside class="sidebar sidebar-left" id="learnSidebarLeft">
         <button type="button" class="learn-sidebar-close" id="learnCloseLeft" aria-label="Закрыть меню">×</button>
-        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: программируем на Python">Мир алгоритмов: программируем на Python</a>
+        <a class="brand-mini" href="{{ url_for('home') }}" title="Мир алгоритмов: проектируем на Python">Мир алгоритмов: проектируем на Python</a>
         <nav class="side-nav" aria-label="Разделы">
             <a class="side-nav__link side-nav__link--active" href="{{ url_for('home') }}">Модули</a>
             <a class="side-nav__link" href="{{ url_for('learn') }}">Задания</a>
@@ -196,9 +196,7 @@
                     <span class="code-workbench__label">main.py</span>
                 </div>
                 <div class="code-workbench__body editor-container">
-                    <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
-                    <textarea id="codeInput" class="code-input" rows="10" spellcheck="false"
-                        wrap="off">{{ editor_seed }}</textarea>
+                    <div id="codeEditorMount" class="code-editor-mount" aria-label="Редактор Python"></div>
                 </div>
                 <div class="code-workbench__actions">
                     <button type="button" class="btn btn-secondary" id="runCodeBtn">▶ Выполнить</button>
@@ -274,5 +272,6 @@
     </aside>
 </div>
 
+<script type="module" src="{{ url_for('static', filename='js/code-editor.bundle.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/learn.js') }}"></script>
 {% endblock %}

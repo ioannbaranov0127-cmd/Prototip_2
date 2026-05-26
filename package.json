@@ -1,0 +1,8 @@
+{
+  "name": "python-course-platform",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:editor": "esbuild CSS/js/code-editor-entry.js --bundle --format=esm --outfile=CSS/js/code-editor.bundle.js"
+  }
+}

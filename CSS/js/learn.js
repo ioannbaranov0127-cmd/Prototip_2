@@ -44,6 +44,9 @@
 
     function refreshLearnTaskInPlace() {
         abortInteractive(true);
+        if (window.LearnCodeEditor && window.LearnCodeEditor.destroy) {
+            window.LearnCodeEditor.destroy();
+        }
         clearTimeout(saveDebounceTimer);
         lastStdinForCheck = '';
         var prevTopicId = cfg.currentTopicId || '';
@@ -180,35 +183,41 @@
         saveDebounceTimer = setTimeout(saveCodeToStorage, 280);
     }
 
+    function getCodeValue() {
+        if (window.LearnCodeEditor && window.LearnCodeEditor.getValue) {
+            return window.LearnCodeEditor.getValue();
+        }
+        var ta = document.getElementById('codeInput');
+        return ta ? ta.value : '';
+    }
+
+    function setCodeValue(val, resetHistory) {
+        if (window.LearnCodeEditor && window.LearnCodeEditor.setValue) {
+            window.LearnCodeEditor.setValue(val, resetHistory);
+            return;
+        }
+        var ta = document.getElementById('codeInput');
+        if (ta) ta.value = val != null ? String(val) : '';
+    }
+
+    function ensureCodeEditorReady() {
+        return new Promise(function (resolve) {
+            if (window.LearnCodeEditor && window.LearnCodeEditor.create) {
+                resolve();
+                return;
+            }
+            window.addEventListener(
+                'learn-code-editor-ready',
+                function () {
+                    resolve();
+                },
+                { once: true }
+            );
+        });
+    }
+
     function saveCodeToStorage() {
-        var ta = document.getElementById('codeInput');
-        if (ta) localStorage.setItem(codeStorageKey(), ta.value);
-    }
-
-    function loadCodeFromStorage() {
-        var ta = document.getElementById('codeInput');
-        if (!ta) return;
-        ta.defaultValue = cfg.editorTemplate;
-        var saved = localStorage.getItem(codeStorageKey());
-        ta.value = saved !== null ? saved : cfg.editorTemplate;
-        updateLineNumbers();
-    }
-
-    function updateLineNumbers() {
-        var ta = document.getElementById('codeInput');
-        var ln = document.getElementById('lineNumbers');
-        if (!ta || !ln) return;
-        var lines = ta.value.split('\n');
-        var numbers = '';
-        for (var i = 1; i <= lines.length; i++) numbers += i + '\n';
-        ln.textContent = numbers;
-        ln.style.height = ta.clientHeight + 'px';
-    }
-
-    function syncScroll() {
-        var ta = document.getElementById('codeInput');
-        var ln = document.getElementById('lineNumbers');
-        if (ta && ln) ln.scrollTop = ta.scrollTop;
+        localStorage.setItem(codeStorageKey(), getCodeValue());
     }
 
     function applyLevelUi(levelObj) {
@@ -900,10 +909,9 @@
     }
 
     function runInteractiveExecute() {
-        var ta = document.getElementById('codeInput');
-        if (!ta) return;
         var box = getConsoleBox();
         if (!box) return;
+        var code = getCodeValue();
         lastStdinForCheck = '';
         var previousRunId = interactiveRunId;
         box.className = 'edu-console';
@@ -917,7 +925,7 @@
         fetch('/interactive/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: ta.value, previous_run_id: previousRunId }),
+            body: JSON.stringify({ code: code, previous_run_id: previousRunId }),
         })
             .then(function (r) {
                 return r.json().then(function (body) {
@@ -1003,14 +1011,12 @@
 
     function checkCode() {
         if ((cfg.taskType || 'code') !== 'code') return;
-        var ta = document.getElementById('codeInput');
-        if (!ta) return;
 
         fetch('/check_code', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                code: ta.value,
+                code: getCodeValue(),
                 task_id: cfg.currentTaskId,
                 stdin: lastStdinForCheck || '',
             }),
@@ -1320,30 +1326,25 @@
     function clearCode() {
         clearTimeout(saveDebounceTimer);
         abortInteractive(true);
-        var ta = document.getElementById('codeInput');
-        if (!ta) return;
         localStorage.removeItem(codeStorageKey());
-        ta.value = cfg.editorTemplate;
-        ta.defaultValue = cfg.editorTemplate;
+        setCodeValue(cfg.editorTemplate, true);
         lastStdinForCheck = '';
-        updateLineNumbers();
-        syncScroll();
         renderIdleConsole();
         showNotification('Редактор очищен', 'info');
     }
 
-    function onTabKey(e) {
-        if (e.key !== 'Tab') return;
-        var t = e.target;
-        if (t.id !== 'codeInput') return;
-        e.preventDefault();
-        var start = t.selectionStart;
-        var end = t.selectionEnd;
-        var sp = '    ';
-        t.value = t.value.substring(0, start) + sp + t.value.substring(end);
-        t.selectionStart = t.selectionEnd = start + sp.length;
-        updateLineNumbers();
-        scheduleSaveCode();
+    function setupCodeEditor() {
+        var mount = document.getElementById('codeEditorMount');
+        if (!mount || !window.LearnCodeEditor || !window.LearnCodeEditor.create) return;
+
+        window.LearnCodeEditor.destroy();
+        var saved = localStorage.getItem(codeStorageKey());
+        var initial = saved !== null && saved !== '' ? saved : cfg.editorTemplate;
+
+        window.LearnCodeEditor.create(mount, {
+            initial: initial,
+            onChange: scheduleSaveCode,
+        });
     }
 
     function bindLearnTaskUi() {
@@ -1376,21 +1377,12 @@
             return;
         }
 
-        var ta = document.getElementById('codeInput');
-        if (!ta) return;
+        var mount = document.getElementById('codeEditorMount');
+        if (!mount) return;
 
-        ta.style.whiteSpace = 'pre';
-        ta.style.overflowX = 'auto';
-        loadCodeFromStorage();
-
-        ta.addEventListener('input', function () {
-            updateLineNumbers();
-            scheduleSaveCode();
+        ensureCodeEditorReady().then(function () {
+            setupCodeEditor();
         });
-        ta.addEventListener('keydown', onTabKey);
-        ta.addEventListener('scroll', syncScroll);
-
-        setTimeout(updateLineNumbers, 80);
 
         var runBtn = document.getElementById('runCodeBtn');
         if (runBtn) {
@@ -1456,7 +1448,6 @@
 
         if (!window._learnPageHooksBound) {
             window._learnPageHooksBound = true;
-            window.addEventListener('resize', updateLineNumbers);
             window.addEventListener('beforeunload', function () {
                 clearTimeout(saveDebounceTimer);
                 saveCodeToStorage();
